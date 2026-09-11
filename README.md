@@ -101,6 +101,30 @@ either setting alone.
 listing terms that are never actually spoken biases the model into
 hallucinating them.
 
+## Tests
+
+```bash
+pip install -e ".[dev]"
+pytest -q
+```
+
+No model download and no media files: `render()` takes `segments.jsonl`, so the
+whole output layer is exercised from synthetic input, and mic tracks are
+generated as WAVs in-test. The suite runs in under a second.
+
+Two of these are regression tests for bugs that shipped and were caught only by
+writing them:
+
+- **Same-day collision** — two recordings on one date resolved to the same
+  output directory; the second run found the first's `segments.jsonl`, reported
+  "already complete", and re-rendered the *wrong* meeting under the second
+  recording's header, exiting zero.
+- **Speaker misattribution** — the paragraph split happened after absorbing the
+  current segment, so on a speaker change the new speaker's words were folded
+  into the previous speaker's paragraph.
+
+Both failed silently. Neither raised an error.
+
 ## Design notes
 
 **The `.srt` is never edited.** Term corrections apply only to the readable

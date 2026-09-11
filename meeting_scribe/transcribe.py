@@ -209,12 +209,16 @@ def render(jsonl, outdir, work, prefix, profile, header_lines, mic_wav=None):
         if "mic" in s:
             who = (profile.speakers["mic_label"] if s["mic"] >= 0.35
                    else profile.speakers["other_label"])
+        # Close the open paragraph BEFORE absorbing this segment, otherwise a
+        # speaker change attributes the new speaker's words to the previous one.
+        if cur and who is not None and who != spk:
+            paras.append((start, spk, " ".join(cur)))
+            cur, start, spk = [], None, None
         if start is None:
             start, spk = s["start"], who
         cur.append(profile.apply_fixes(s["text"], applied))
         gap = segs[i + 1]["start"] - s["end"] if i + 1 < len(segs) else 99
-        speaker_change = who is not None and who != spk
-        if gap > 1.5 or s["end"] - start > 45 or speaker_change or i + 1 == len(segs):
+        if gap > 1.5 or s["end"] - start > 45 or i + 1 == len(segs):
             paras.append((start, spk, " ".join(cur)))
             cur, start, spk = [], None, None
 
