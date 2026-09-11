@@ -41,6 +41,20 @@ Output lands in `<video-dir>/<date>-<project>-meeting/`:
 `profile.yaml` is **gitignored** — it holds people's names and internal system
 names. Only `profile.example.yaml` is committed.
 
+### Options
+
+| | |
+|---|---|
+| `--profile PATH` | profile to use (default `./profile.yaml`; falls back to built-in defaults) |
+| `--track N` | transcribe a specific audio track instead of the profile's `tracks.mix` |
+| `--no-speakers` | skip mic-based speaker labels even on a multi-track file |
+| `--outdir DIR` | override the output directory |
+| `--title` / `--meta` | header lines written into the readable transcript |
+
+Runs resume: segments are flushed to `.work/segments.jsonl` as they are produced, so
+re-running after an interruption continues from the last committed timestamp. A cached
+WAV whose duration does not match the source is re-decoded rather than reused.
+
 ## Speaker labels without diarization
 
 Proper diarization (pyannote) needs a gated model and a Hugging Face token,
@@ -64,6 +78,11 @@ the common-values dropdown has no 5) and use x264 **CRF 28** with tune
 **`stillimage`**. A flowchart does not move; 30 fps is wasted. In testing this
 cut a recording from 6.2 Mbps to 1.08 Mbps with identical transcript quality
 and no loss of on-screen legibility.
+
+Under Settings → Advanced → Recording, set **Filename Formatting** to
+`%CCYY-%MM-%DD_%hh-%mm-%ss`. The default contains a space, which survives fine here
+(the date and time are parsed either way) but makes every shell command that touches
+the file need quoting.
 
 > **Bluetooth headsets:** the mic only exists in hands-free (HFP) mode, which
 > Windows enters when a call opens the mic. Recording a test while *not* on a
@@ -156,9 +175,17 @@ wrong about half the time.
 
 Attaching diarization to a transcript therefore requires **word-level timestamps**
 (`word_timestamps=True`), assigning speakers per word and rebuilding turns from word
-runs — the approach WhisperX takes. Without that, a mic-track heuristic that only
-separates the local speaker from everyone else is the more honest option, because it
-under-claims rather than mislabels.
+runs — the approach WhisperX takes.
+
+That costs **+44%** transcription time, measured on the same 5-minute slice (252s →
+364s). It also yields finer segments as a side effect — 59 instead of 39 — which
+independently helps the coverage problem. For a 67-minute meeting the full picture is
+roughly 45 min today versus 65 min transcription plus 11 min diarization.
+
+Whether that trade is worth it depends on whether anyone is waiting. Unattended, it is
+cheap; watched, it is not. Until then a mic-track heuristic that only separates the
+local speaker from everyone else is the more honest option, because it under-claims
+rather than mislabels.
 
 ## Design notes
 
