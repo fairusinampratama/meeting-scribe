@@ -1,0 +1,67 @@
+# meeting-scribe profile
+#
+# Copy to profile.yaml and fill in for your own project.
+# profile.yaml is gitignored on purpose: it holds people's names and internal
+# system names, which must not end up in a public repository.
+
+project: ACME            # short tag used in output filenames: 2026-01-31-acme-transcript.txt
+language: en             # pin it; auto-detect per-chunk is worse on accented speech
+
+# ---------------------------------------------------------------------------
+# Glossary
+#
+# Fed to Whisper as initial_prompt so domain terms survive. Two rules learned
+# the hard way:
+#   1. KEEP IT SHORT. Over-prompting makes the model degenerate into repetition
+#      loops and drop content. ~40-60 words is the sweet spot.
+#   2. Only list terms that are ACTUALLY SPOKEN. Padding it with terms that
+#      never occur biases the model into hallucinating them.
+# ---------------------------------------------------------------------------
+glossary: >
+  Meeting: ACME project standup and workflow discussion between Vendor and Client.
+  Attendees Alice, Bob, Carol.
+  Terms: ACME, WIDGET, SFTP, UAT, API, staging.
+
+# ---------------------------------------------------------------------------
+# Term fixes
+#
+# Applied ONLY to the readable .txt. The .srt stays verbatim so you always have
+# an unedited record -- important if anyone ever disputes a line.
+# Each entry is [regex, replacement]; matching is case-insensitive.
+# The .txt header lists every substitution and how many times it fired.
+# ---------------------------------------------------------------------------
+fixes:
+  - ['\b(?:wid ?get|wij ?it)\b', 'WIDGET']
+  - ['\bay ?pee ?eye\b', 'API']
+
+# ---------------------------------------------------------------------------
+# Audio tracks (1-based, as OBS numbers them)
+#
+# Set up OBS to record three tracks:
+#   1 = mix (everything)    2 = desktop only    3 = your mic only
+#
+# The mix is what gets transcribed. The mic track is used only for voice
+# activity, to label which segments are yours -- far cheaper than transcribing
+# both tracks, and accurate enough for attribution.
+#
+# Set mic: null if you record a single track.
+# ---------------------------------------------------------------------------
+tracks:
+  mix: 1
+  desktop: 2
+  mic: 3
+
+speakers:
+  mic_label: ME           # shown on segments where your mic was active
+  other_label: CALL       # everyone else
+
+# ---------------------------------------------------------------------------
+# Model
+#
+# large-v3-turbo int8 on CPU runs ~1.5x realtime on a modern laptop.
+# distil-large-v3 is ~2x faster but measurably worse on accented English.
+# ---------------------------------------------------------------------------
+model:
+  name: large-v3-turbo
+  compute_type: int8
+  threads: 14

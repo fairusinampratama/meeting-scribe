@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "meeting-scribe"
+version = "0.1.0"
+description = "Local, offline meeting transcription with speaker hints and summary publishing"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+dependencies = [
+    "faster-whisper>=1.2",
+    "av>=12",
+    "numpy>=1.24",
+    "PyYAML>=6",
+    "markdown>=3.5",
+    "python-docx>=1.1",
+]
+
+[project.scripts]
+meeting-scribe = "meeting_scribe.cli:main"
+
+[tool.setuptools]
+packages = ["meeting_scribe"]
