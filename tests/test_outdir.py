@@ -81,3 +81,40 @@ def test_unreadable_marker_does_not_crash(tmp_path):
     with open(os.path.join(work, "source.json"), "w", encoding="utf-8") as fh:
         fh.write("{ not json")
     assert _resolve_outdir(str(video), "2026-09-11", "foms", None) == out
+
+
+# --- filename-format independence -------------------------------------------
+# OBS's "Filename Formatting" setting may or may not take effect. The pipeline
+# must not care: both the old space-separated name and the underscore name have
+# to resolve to the same date, and still disambiguate by time.
+
+import pytest
+from meeting_scribe.cli import _prefix
+from meeting_scribe.profile import Profile
+
+
+@pytest.mark.parametrize("name", [
+    "2026-09-14 08-30-00.mp4",      # OBS default (space)
+    "2026-09-14_08-30-00.mp4",      # configured format (underscore)
+    "2026-09-14 08-30-00.mkv",
+])
+def test_prefix_is_filename_format_independent(name):
+    prefix, date = _prefix(name, Profile({"project": "foms"}))
+    assert date == "2026-09-14"
+    assert prefix == "2026-09-14-foms"
+
+
+@pytest.mark.parametrize("first,second", [
+    ("2026-09-14 08-30-00.mp4", "2026-09-14 13-00-00.mp4"),
+    ("2026-09-14_08-30-00.mp4", "2026-09-14_13-00-00.mp4"),
+    ("2026-09-14 08-30-00.mp4", "2026-09-14_13-00-00.mp4"),   # mixed, if the setting lands mid-day
+])
+def test_same_day_disambiguation_works_for_both_formats(tmp_path, first, second):
+    a, b = tmp_path / first, tmp_path / second
+    a.write_bytes(b"")
+    b.write_bytes(b"")
+    out_a = _resolve_outdir(str(a), "2026-09-14", "foms", None)
+    _mark(out_a, str(a))
+    out_b = _resolve_outdir(str(b), "2026-09-14", "foms", None)
+    assert out_a != out_b
+    assert "1300" in os.path.basename(out_b)
