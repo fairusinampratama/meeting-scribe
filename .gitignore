@@ -40,3 +40,4 @@ desktop.ini
 # Analysis skill: written but not yet exercised end-to-end.
 # Untracked until it has produced minutes/dev-brief/actions.csv on a real meeting.
 skill/
+models/

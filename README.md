@@ -125,6 +125,41 @@ writing them:
 
 Both failed silently. Neither raised an error.
 
+## Speaker diarization — findings
+
+Real diarization is available offline with **no HuggingFace token**:
+[`sherpa-onnx`](https://github.com/k2-fsa/sherpa-onnx) (Apache-2.0, Windows wheels, ONNX
+only, no PyTorch) with models served as plain downloads from public GitHub releases.
+That matters on machines where pyannote's gated models are simply unreachable.
+
+Measured on a 67-minute, ~8-speaker meeting recorded through a Bluetooth headset:
+
+| | |
+|---|---|
+| Speed | **6.0x realtime** on CPU (11.3 min) with CAM++ embeddings |
+| Clustering | 12 clusters, 8 with real speaking time, top-3 = 68% |
+| Self-identification anchor | correctly and consistently clustered |
+
+**The documented default threshold is wrong for some embedding models.** With
+`FastClusteringConfig(threshold=0.5)` — the value in the examples — paired with NeMo
+TitaNet-large, a 67-minute meeting produced **225 speakers**. The same audio with
+`wespeaker_en_voxceleb_CAM++_LM` at `threshold=1.0` produced 12. CAM++ was also 2.5x
+faster and a third the size. Sweep the threshold against a slice before trusting it.
+
+**The real obstacle is segmentation granularity, not diarization accuracy.**
+Whisper segments produced with `condition_on_previous_text=True` are long and do not
+respect speaker turns. Measured against this meeting, only **32%** of transcript
+segments had >=70% overlap with a single speaker, and **44%** had under 50%. One
+segment contained a question, its answer, and the questioner resuming — three turns,
+one label. Assigning one speaker per Whisper segment yields confident labels that are
+wrong about half the time.
+
+Attaching diarization to a transcript therefore requires **word-level timestamps**
+(`word_timestamps=True`), assigning speakers per word and rebuilding turns from word
+runs — the approach WhisperX takes. Without that, a mic-track heuristic that only
+separates the local speaker from everyone else is the more honest option, because it
+under-claims rather than mislabels.
+
 ## Design notes
 
 **The `.srt` is never edited.** Term corrections apply only to the readable
