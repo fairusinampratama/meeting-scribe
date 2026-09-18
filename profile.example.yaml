@@ -52,8 +52,12 @@ tracks:
   mic: 3
 
 speakers:
-  mic_label: ME           # shown on segments where your mic was active
-  other_label: CALL       # everyone else
+  mic_label: ME           # shown only where the mic was decisively active
+  other_label: CALL       # retained for compatibility; no longer applied
+  mic_threshold: 0.8      # fraction of a paragraph the mic must cover to earn a label.
+                          # Measured on a real 63-min meeting: at 0.35 two thirds of the
+                          # tags were coin flips. Below this, paragraphs stay UNLABELLED,
+                          # which means undetermined -- not "somebody else".
 
 # ---------------------------------------------------------------------------
 # Model

@@ -27,6 +27,7 @@ cp profile.example.yaml profile.yaml    # then edit it
 meeting-scribe transcribe "2026-01-31_09-00-00.mp4"
 meeting-scribe publish 2026-01-31-acme-summary.md
 meeting-scribe probe "2026-01-31_09-00-00.mp4"
+meeting-scribe snapshot actions.csv      # before editing a tracking file
 ```
 
 Output lands in `<video-dir>/<date>-<project>-meeting/`:
@@ -51,6 +52,10 @@ names. Only `profile.example.yaml` is committed.
 | `--outdir DIR` | override the output directory |
 | `--title` / `--meta` | header lines written into the readable transcript |
 
+`snapshot` writes a timestamped copy into `history/` beside the file and keeps the
+last 30 (`--keep`). Intended for a long-lived actions/tracking file: a transcript
+can be regenerated from the recording, months of accumulated notes cannot.
+
 Runs resume: segments are flushed to `.work/segments.jsonl` as they are produced, so
 re-running after an interruption continues from the last committed timestamp. A cached
 WAV whose duration does not match the source is re-decoded rather than reused.
@@ -61,12 +66,30 @@ Proper diarization (pyannote) needs a gated model and a Hugging Face token,
 which many corporate machines can't get. This takes a different route.
 
 Record three audio tracks in OBS: **1 = mix, 2 = desktop, 3 = your mic**. The
-mix is transcribed; the mic track is only checked for *voice activity*. Any
-segment overlapping mic activity by ≥35% is attributed to you, the rest to the
-call. One transcription pass, near-zero extra cost.
+mix is transcribed; the mic track is only checked for *voice activity*. One
+transcription pass, near-zero extra cost.
+
+**Only decisive overlap earns a label.** A paragraph is attributed to you when
+the mic was active for ≥`mic_threshold` of it (default **0.8**). Everything else
+is left **unlabelled** — meaning undetermined, not "somebody else".
+
+That default was raised from 0.35 after measuring a real 63-minute meeting:
+
+| mic overlap | share of segments |
+|---|---|
+| ≥80% — decisive | 9.5% |
+| 20–60% — closer to a coin flip | 24% |
+| <20% — clearly not you | ~66% |
+
+At 0.35, **228 of 748 segments were tagged but only 71 cleared 0.8** — two thirds
+of the labels were guesses, and a reader could not tell which. On a client
+transcript that means attributing somebody's commitment to the wrong person, so
+the feature now under-claims by design. Lower `mic_threshold` if you would
+rather have coverage than precision.
 
 It is a heuristic, not diarization: it separates *you* from *everyone else*, not
-each remote participant. The transcript header says so explicitly.
+each remote participant. The transcript header says so explicitly, and states
+how many paragraphs earned a label.
 
 ### OBS setup
 

@@ -205,13 +205,21 @@ def render(jsonl, outdir, work, prefix, profile, header_lines, mic_wav=None):
     applied = Counter()
     paras, cur, start, spk = [], [], None, None
     for i, s in enumerate(segs):
+        # Label ONLY where the mic overlap is decisive. Measured on a real
+        # 63-minute meeting, a 0.35 threshold tagged 228/748 segments but only
+        # 71 were above 0.8 -- two thirds of the tags were closer to a coin flip
+        # than a finding. An absent tag is honest; a wrong one attributes
+        # somebody's commitment to the wrong person.
         who = None
-        if "mic" in s:
-            who = (profile.speakers["mic_label"] if s["mic"] >= 0.35
-                   else profile.speakers["other_label"])
+        if "mic" in s and s["mic"] >= profile.speakers["mic_threshold"]:
+            who = profile.speakers["mic_label"]
         # Close the open paragraph BEFORE absorbing this segment, otherwise a
         # speaker change attributes the new speaker's words to the previous one.
-        if cur and who is not None and who != spk:
+        # Any change in attribution closes the paragraph -- including label ->
+        # unlabelled. Skipping the None case merges an undetermined segment into
+        # the previous speaker's paragraph, which is the misattribution this
+        # whole mechanism exists to avoid.
+        if cur and who != spk:
             paras.append((start, spk, " ".join(cur)))
             cur, start, spk = [], None, None
         if start is None:
@@ -231,8 +239,13 @@ def render(jsonl, outdir, work, prefix, profile, header_lines, mic_wav=None):
         if active is None:
             fh.write("Speaker labels: none (single-track recording)\n")
         else:
-            fh.write(f"Speaker labels: {profile.speakers['mic_label']} = local mic active; "
-                     f"{profile.speakers['other_label']} = everyone else. Heuristic, not diarization.\n")
+            tagged = sum(1 for _, who, _ in paras if who)
+            thr = profile.speakers["mic_threshold"]
+            fh.write(f"Speaker labels: {profile.speakers['mic_label']} marks paragraphs where the "
+                     f"local mic was active for >={thr:.0%} of the audio "
+                     f"({tagged}/{len(paras)} paragraphs).\n")
+            fh.write("Everything else is UNLABELLED - that means undetermined, not "
+                     "'someone else'. Heuristic, not diarization.\n")
         fh.write("=" * 78 + "\n\n")
         for t, who, text in paras:
             tag = f"{who} " if who else ""
@@ -260,10 +273,14 @@ def render(jsonl, outdir, work, prefix, profile, header_lines, mic_wav=None):
     print(f"low-confidence {len(low)} ({100*len(low)/len(segs):.1f}%)  repetition suspects {len(rep)}")
     print(f"normalisations {dict(applied) if applied else 'none'}")
     if active is not None:
-        mic_segs = sum(1 for s in segs if s.get("mic", 0) >= 0.35)
-        print(f"speaker labels: {mic_segs}/{len(segs)} segments attributed to "
-              f"{profile.speakers['mic_label']}")
-        if mic_segs == 0:
+        thr = profile.speakers["mic_threshold"]
+        tagged = sum(1 for _, who, _ in paras if who)
+        decisive = sum(1 for s in segs if s.get("mic", 0) >= thr)
+        ambiguous = sum(1 for s in segs if 0.2 <= s.get("mic", 0) < thr)
+        print(f"speaker labels: {tagged}/{len(paras)} paragraphs tagged "
+              f"{profile.speakers['mic_label']} (mic >={thr:.0%})")
+        print(f"  {decisive} segments decisive, {ambiguous} ambiguous and left unlabelled")
+        if decisive == 0:
             print("  [warn] mic track never active -- check the mic actually records "
                   "(Bluetooth headsets only enable the mic in hands-free mode)")
     print(f"-> {outdir}")

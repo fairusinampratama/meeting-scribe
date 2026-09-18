@@ -104,6 +104,34 @@ def cmd_publish(args):
     print(f"docx  {stem}.docx  (headings={heads} tables={tables})")
 
 
+def cmd_snapshot(args):
+    """Timestamped copy of a tracking file before it is edited.
+
+    The running actions file accumulates months of project memory in a single
+    document. A bad edit to it costs more than a bad transcript, because the
+    transcript can be regenerated and the history cannot.
+    """
+    import shutil
+    import time
+
+    src = os.path.abspath(args.file)
+    if not os.path.isfile(src):
+        raise SystemExit(f"not a file: {src}")
+    hist = os.path.join(os.path.dirname(src), "history")
+    os.makedirs(hist, exist_ok=True)
+    stem, ext = os.path.splitext(os.path.basename(src))
+    dst = os.path.join(hist, f"{stem}.{time.strftime('%Y-%m-%d-%H%M')}{ext}")
+    shutil.copy2(src, dst)
+    print(f"snapshot -> {dst}")
+
+    keep = args.keep
+    kept = sorted(f for f in os.listdir(hist) if f.startswith(stem + ".") and f.endswith(ext))
+    for old in kept[:-keep] if len(kept) > keep else []:
+        os.remove(os.path.join(hist, old))
+        print(f"pruned   {old}")
+    print(f"{min(len(kept), keep)} snapshot(s) retained")
+
+
 def cmd_probe(args):
     """Show what a recording actually contains -- useful for confirming OBS
     settings took effect before relying on them."""
@@ -145,6 +173,11 @@ def main(argv=None):
     p.add_argument("markdown")
     p.add_argument("--title", default="")
     p.set_defaults(func=cmd_publish)
+
+    sn = sub.add_parser("snapshot", help="timestamped backup of a tracking file before editing")
+    sn.add_argument("file")
+    sn.add_argument("--keep", type=int, default=30, help="snapshots to retain (default 30)")
+    sn.set_defaults(func=cmd_snapshot)
 
     pr = sub.add_parser("probe", help="inspect a recording's tracks, fps and bitrate")
     pr.add_argument("video")

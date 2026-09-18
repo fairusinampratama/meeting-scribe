@@ -86,8 +86,9 @@ def test_voice_activity_detects_loud_regions():
     assert mic_overlap(active, frame_s, 0.0, 1.8) < 0.2, "should not fire on silence"
 
 
-def test_speaker_labels_applied_from_mic_track(tmp_path):
-    """Mic active for the first segment only -> first tagged ME, second CALL."""
+def test_decisive_mic_earns_a_label_and_the_rest_stay_unlabelled(tmp_path):
+    """Mic dominant on the first segment only: that one is tagged, the other is
+    left UNLABELLED rather than asserted to be somebody else."""
     jsonl = _segments(tmp_path, [(0.0, 3.0, "I will take that."), (4.0, 7.0, "Understood.")])
     mic = _wav(tmp_path / "mic.wav", [(3.0, 0.5), (1.0, 0.0), (3.0, 0.0)])
     out, work = tmp_path / "out", tmp_path / "out" / ".work"
@@ -95,9 +96,38 @@ def test_speaker_labels_applied_from_mic_track(tmp_path):
     render(jsonl, str(out), str(work), "p", Profile({}), ["T"], mic_wav=mic)
 
     txt = (out / "p-transcript.txt").read_text(encoding="utf-8")
-    assert "ME I will take that." in txt
-    assert "CALL Understood." in txt
+    body = txt.split("=" * 78, 1)[1]
+    assert "ME I will take that." in body
+    assert "] Understood." in body, "second paragraph must carry no tag"
+    assert "CALL" not in body, "CALL must no longer be applied to segments"
     assert "Heuristic, not diarization" in txt, "must not overclaim as diarization"
+
+
+def test_ambiguous_mic_overlap_earns_no_label(tmp_path):
+    """The point of the change: a segment the mic half-covers is undetermined,
+    and must not be tagged either way. At the old 0.35 threshold this was
+    confidently -- and often wrongly -- attributed."""
+    jsonl = _segments(tmp_path, [(0.0, 4.0, "Half mine, half theirs.")])
+    mic = _wav(tmp_path / "mic.wav", [(1.8, 0.5), (2.2, 0.0)])   # ~45% coverage
+    out, work = tmp_path / "out", tmp_path / "out" / ".work"
+    os.makedirs(work)
+    render(jsonl, str(out), str(work), "p", Profile({}), ["T"], mic_wav=mic)
+    body = (out / "p-transcript.txt").read_text(encoding="utf-8").split("=" * 78, 1)[1]
+    assert "] Half mine, half theirs." in body
+    assert "ME" not in body
+
+
+def test_mic_threshold_is_configurable(tmp_path):
+    """Lowering the threshold restores the old permissive behaviour, so the
+    trade-off is the operator's to make."""
+    jsonl = _segments(tmp_path, [(0.0, 4.0, "Half mine, half theirs.")])
+    mic = _wav(tmp_path / "mic.wav", [(1.8, 0.5), (2.2, 0.0)])
+    out, work = tmp_path / "out", tmp_path / "out" / ".work"
+    os.makedirs(work)
+    render(jsonl, str(out), str(work), "p",
+           Profile({"speakers": {"mic_threshold": 0.3}}), ["T"], mic_wav=mic)
+    body = (out / "p-transcript.txt").read_text(encoding="utf-8").split("=" * 78, 1)[1]
+    assert "ME Half mine, half theirs." in body
 
 
 def test_silent_mic_track_labels_nothing_as_me(tmp_path):
@@ -111,4 +141,4 @@ def test_silent_mic_track_labels_nothing_as_me(tmp_path):
     txt = (out / "p-transcript.txt").read_text(encoding="utf-8")
     body = txt.split("=" * 78, 1)[1]          # skip the header legend
     assert "] ME " not in body
-    assert "] CALL " in body
+    assert "] Hello." in body, "text still present, just unlabelled"

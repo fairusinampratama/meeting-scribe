@@ -11,7 +11,7 @@ DEFAULTS = {
     "glossary": "",
     "fixes": [],
     "tracks": {"mix": 1, "desktop": None, "mic": None},
-    "speakers": {"mic_label": "ME", "other_label": "CALL"},
+    "speakers": {"mic_label": "ME", "other_label": "CALL", "mic_threshold": 0.8},
     "model": {"name": "large-v3-turbo", "compute_type": "int8", "threads": 0},
 }
 
