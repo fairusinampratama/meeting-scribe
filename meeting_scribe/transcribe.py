@@ -185,14 +185,24 @@ def transcribe_wav(wav_path, jsonl, profile):
 # --------------------------------------------------------------------------
 # rendering
 # --------------------------------------------------------------------------
-def render(jsonl, outdir, work, prefix, profile, header_lines, mic_wav=None):
+def render(jsonl, outdir, work, prefix, profile, header_lines, mic_wav=None,
+           timeline=None):
     segs = [json.loads(l) for l in open(jsonl, encoding="utf-8") if l.strip()]
     if not segs:
         raise SystemExit("no segments -- transcription produced nothing")
     segs.sort(key=lambda s: s["start"])
 
+    # Speaker source precedence: video (real names) > mic heuristic (you vs not
+    # you) > nothing. Video wins because it names people and is exact about turn
+    # boundaries; the mic heuristic only ever distinguished the local speaker.
+    vid_stats = None
+    if timeline:
+        from . import video as V
+        segs, vid_stats = V.attribute(segs, timeline)
+
     active, frame_s = (voice_activity(read_wav(mic_wav))
-                       if mic_wav and os.path.exists(mic_wav) else (None, 0.5))
+                       if mic_wav and os.path.exists(mic_wav) and not timeline
+                       else (None, 0.5))
     if active is not None:
         for s in segs:
             s["mic"] = mic_overlap(active, frame_s, s["start"], s["end"])
@@ -211,7 +221,9 @@ def render(jsonl, outdir, work, prefix, profile, header_lines, mic_wav=None):
         # than a finding. An absent tag is honest; a wrong one attributes
         # somebody's commitment to the wrong person.
         who = None
-        if "mic" in s and s["mic"] >= profile.speakers["mic_threshold"]:
+        if s.get("speaker"):
+            who = s["speaker"]
+        elif "mic" in s and s["mic"] >= profile.speakers["mic_threshold"]:
             who = profile.speakers["mic_label"]
         # Close the open paragraph BEFORE absorbing this segment, otherwise a
         # speaker change attributes the new speaker's words to the previous one.
@@ -236,7 +248,16 @@ def render(jsonl, outdir, work, prefix, profile, header_lines, mic_wav=None):
             fh.write(line + "\n")
         fh.write(f"Term normalisations applied: {dict(applied) if applied else 'none'}\n")
         fh.write(f"Verbatim source of truth: {prefix}-transcript.srt\n")
-        if active is None:
+        if vid_stats:
+            tagged = sum(1 for _, who, _ in paras if who)
+            n = sum(vid_stats.values()) or 1
+            fh.write(f"Speaker names: read from the meeting UI's active-speaker highlight "
+                     f"({tagged}/{len(paras)} paragraphs named).\n")
+            fh.write(f"Unnamed paragraphs span a speaker change "
+                     f"({100*vid_stats['straddled']/n:.0f}% of segments) or had nobody "
+                     f"highlighted ({100*vid_stats['unknown']/n:.0f}%). Unnamed means "
+                     f"undetermined - never read it as 'someone else'.\n")
+        elif active is None:
             fh.write("Speaker labels: none (single-track recording)\n")
         else:
             tagged = sum(1 for _, who, _ in paras if who)

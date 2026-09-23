@@ -69,3 +69,23 @@ model:
   name: large-v3-turbo
   compute_type: int8
   threads: 14
+
+# ---------------------------------------------------------------------------
+# Active-speaker detection from the recorded meeting UI (optional).
+#
+# Conferencing clients ring the current speaker's tile. Reading that border is
+# far stronger than anything recoverable from the audio: real names, exact turn
+# boundaries, ~100x realtime. Omit this block and the feature stays off.
+#
+# Measure the tile rectangles once from a screenshot of your own layout --
+# they are pixel coordinates in the recorded frame, and they change if the
+# window size or gallery layout changes. `names` mirrors the grid.
+# ---------------------------------------------------------------------------
+# video:
+#   threshold: 15          # blue-minus-red on the tile border; inactive tiles sat <=6
+#   cols: [[1232, 1412], [1416, 1536]]
+#   rows: [[110, 285], [290, 465], [470, 650]]
+#   names:
+#     - ["Alice", "Bob"]
+#     - ["Carol", "Dave"]
+#     - ["Erin",  "Frank"]

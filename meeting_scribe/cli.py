@@ -8,6 +8,7 @@ from .profile import Profile
 from . import transcribe as T
 from . import publish as P
 from . import actions as A
+from . import video as V
 
 
 def _prefix(video, profile):
@@ -79,6 +80,20 @@ def cmd_transcribe(args):
             print(f"[warn] mic track unavailable ({exc}); continuing without speaker labels")
             mic_wav = None
 
+    # Active-speaker timeline from the recorded meeting UI. ~100x realtime, so
+    # it costs under a minute even on a long meeting; cached so re-renders are
+    # instant. Silently yields nothing if the profile carries no tile layout.
+    timeline = []
+    if profile.video and not args.no_speakers:
+        try:
+            timeline = V.speaker_timeline(args.video, profile,
+                                          cache=os.path.join(work, "speakers.json"))
+            if timeline:
+                named = sum(1 for x in timeline if x["who"])
+                print(f"[video] {len(timeline)} samples, {named} with an active speaker")
+        except Exception as exc:
+            print(f"[warn] active-speaker detection failed ({exc}); continuing without it")
+
     T.transcribe_wav(mix_wav, os.path.join(work, "segments.jsonl"), profile)
 
     header = [args.title or f"{profile.project.upper()} meeting - {date}"]
@@ -86,7 +101,10 @@ def cmd_transcribe(args):
         header.append(args.meta)
     header.append(f"Transcribed locally, faster-whisper {profile.model['name']}.")
     T.render(os.path.join(work, "segments.jsonl"), outdir, work, prefix, profile,
-             header, mic_wav=mic_wav)
+             header, mic_wav=mic_wav, timeline=timeline)
+
+    for row in V.timeline_summary(timeline):
+        print(f"  floor: {row['who']:<18}{row['minutes']:5.1f} min  {row['share']:5.1f}%")
 
 
 def cmd_publish(args):

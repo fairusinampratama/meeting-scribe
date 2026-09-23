@@ -77,7 +77,31 @@ Runs resume: segments are flushed to `.work/segments.jsonl` as they are produced
 re-running after an interruption continues from the last committed timestamp. A cached
 WAV whose duration does not match the source is re-decoded rather than reused.
 
-## Speaker labels without diarization
+## Speaker names from the meeting UI
+
+Conferencing clients ring the current speaker's tile. Reading that border gives
+**real names**, exact turn boundaries, and costs almost nothing: on a 41-minute
+recording, 12,357 frames decoded and 824 sampled in **23 seconds** — about 105x
+realtime. At 5 fps there simply are not many frames to read.
+
+Measured on a real meeting, the highlighted tile scored **6.7x to 11.7x** above
+every other tile, and the participant who was muted throughout was **never once**
+detected.
+
+**Attribution is capped by transcript granularity, not by detection.** Turns
+change roughly 5 times a minute while segments average 8 seconds, so about 40%
+of segments contain a single speaker and the rest straddle a change. Straddling
+segments are left unnamed rather than assigned to the dominant speaker — on the
+meeting this was built against, guessing would have mislabelled about half of
+them.
+
+The speaker timeline is useful even where it cannot be attached to text: it
+answers who held the floor and who was present but silent.
+
+Set the `video` block in `profile.yaml` (tile rectangles and names) to enable it.
+Without it the feature stays off and nothing changes.
+
+## Speaker labels without diarization (fallback)
 
 Proper diarization (pyannote) needs a gated model and a Hugging Face token,
 which many corporate machines can't get. This takes a different route.

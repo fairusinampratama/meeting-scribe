@@ -13,6 +13,7 @@ DEFAULTS = {
     "tracks": {"mix": 1, "desktop": None, "mic": None},
     "speakers": {"mic_label": "ME", "other_label": "CALL", "mic_threshold": 0.8},
     "model": {"name": "large-v3-turbo", "compute_type": "int8", "threads": 0},
+    "video": {},
 }
 
 
@@ -28,6 +29,7 @@ class Profile:
         self.tracks = d["tracks"]
         self.speakers = d["speakers"]
         self.model = d["model"]
+        self.video = d.get("video") or {}
 
         if not self.model.get("threads"):
             self.model["threads"] = max(1, (os.cpu_count() or 4) - 2)
