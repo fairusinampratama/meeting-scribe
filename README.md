@@ -29,6 +29,7 @@ meeting-scribe publish 2026-01-31-acme-summary.md
 meeting-scribe probe "2026-01-31_09-00-00.mp4"
 meeting-scribe snapshot actions.csv      # before editing a tracking file
 meeting-scribe actions actions.csv       # ranked view: what needs attention today
+meeting-scribe reconcile actions.csv theirs.csv   # diff against a status deck
 ```
 
 Output lands in `<video-dir>/<date>-<project>-meeting/`:
@@ -121,6 +122,37 @@ budget once referenced changes run out.
 Frames land in `<meeting>/frames/` as `MMmSSs-dN.png`, where `N` is how many
 screen references follow. They hold participant names and client documents, so
 they are gitignored and stay beside the transcript.
+
+## Reconciling against someone else's list
+
+Status decks get presented in meetings, so they land in the keyframes. Transcribe
+one into a small CSV (`item,status`) and diff it against the running actions file:
+
+```
+meeting-scribe reconcile actions.csv deck.csv
+```
+
+It reports status disagreements, items on their list that are on nobody's, and
+links that point at something since removed.
+
+**Links are explicit, in a `counterpart` column** (semicolon-separated -- their
+decks summarise, so one of your rows often answers for several of their lines).
+Fuzzy matching is only ever a *suggestion*, never an automatic link, because
+"Datastore" and "Submit Data Store access request" are the same item while "CRM
+Integrations" and "Ask CRM how DB scripts are stored" are not, and no overlap
+score separates those two reliably. A human decides once and it stays decided.
+
+**Word weights are measured, not hand-listed.** Suggestion scoring weights each
+word by how rare it is across the two lists being compared. Run without that, on
+a real list, "integration" and "billing" appear in most items on both sides, one
+shared generic word covers most of a short label, and everything matches
+everything -- measured: 10 of 10 items suggested, 1 correct. With the weighting,
+5 of 10, all in the right subject area. Compound spellings are joined rather
+than tabulated, so "work list" reaches "Worklist" without a synonym table.
+
+It found a real gap on its first run: of 16 action items in one set of minutes,
+15 had reached the tracker. The missing one was independently flagged as OPEN on
+the deck.
 
 ## Speaker labels without diarization (fallback)
 
@@ -282,6 +314,10 @@ a line, the unedited machine output still exists.
 low-confidence segments (`avg_logprob`, `compression_ratio`, `no_speech_prob`)
 and repetition-loop suspects, so you know which passages to distrust instead of
 sampling blind.
+
+**Two views beat one.** A status deck and a running actions file are built by
+different people from different notes. Where they disagree is a finding neither
+produces alone -- and where they agree something is missing, it is missing.
 
 **Resume is free.** Segments are flushed to `segments.jsonl` as they are
 produced; an interrupted run continues from the last committed timestamp.

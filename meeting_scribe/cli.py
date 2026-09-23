@@ -8,6 +8,7 @@ from .profile import Profile
 from . import transcribe as T
 from . import publish as P
 from . import actions as A
+from . import reconcile as RC
 from . import video as V
 
 
@@ -179,6 +180,14 @@ def cmd_actions(args):
     print(A.render_markdown(rows, asof, top=args.top))
 
 
+def cmd_reconcile(args):
+    """Diff our actions file against the counterpart's own tracker."""
+    ours = A.load(os.path.abspath(args.file))
+    theirs = RC.load_theirs(os.path.abspath(args.theirs))
+    res = RC.reconcile(ours, theirs, suggest_threshold=args.threshold)
+    print(RC.render_markdown(res))
+
+
 def cmd_probe(args):
     """Show what a recording actually contains -- useful for confirming OBS
     settings took effect before relying on them."""
@@ -202,6 +211,15 @@ def cmd_probe(args):
 
 
 def main(argv=None):
+    # Windows consoles default to cp1252, which turns every non-ASCII character
+    # in the rendered markdown into U+FFFD -- and it is lost at encode time, so
+    # redirecting to a file does not save it either.
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8")
+        except (AttributeError, ValueError):
+            pass
+
     ap = argparse.ArgumentParser(prog="meeting-scribe",
                                  description="Local meeting transcription. Nothing leaves the machine.")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -233,6 +251,13 @@ def main(argv=None):
     ac.add_argument("--asof", help="date to rank against (default: today)")
     ac.add_argument("--top", type=int, default=8, help="rows to show (default 8)")
     ac.set_defaults(func=cmd_actions)
+
+    rc = sub.add_parser("reconcile", help="diff our actions against the counterpart's tracker")
+    rc.add_argument("file", help="our actions CSV")
+    rc.add_argument("theirs", help="CSV of their tracker: item,status[,seen]")
+    rc.add_argument("--threshold", type=float, default=0.5,
+                    help="similarity at or above which an unlinked item is suggested (default 0.5)")
+    rc.set_defaults(func=cmd_reconcile)
 
     pr = sub.add_parser("probe", help="inspect a recording's tracks, fps and bitrate")
     pr.add_argument("video")
