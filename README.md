@@ -310,6 +310,16 @@ rather than mislabels.
 `.txt`, and its header lists every substitution with a count. If anyone disputes
 a line, the unedited machine output still exists.
 
+**The worst decode window is always reported.** A percentage of segments over a
+confidence threshold cannot tell six segments of garbage apart from six ordinary
+short questions, so every run also prints the worst `avg_logprob` and how many
+consecutive segments share it. faster-whisper assigns one value per decode
+window, so a run of identical values *is* a window. Run length on its own means
+nothing -- healthy transcripts contain runs of 26 and 28; it is the value that
+matters. Measured across five real meetings the worst window sat between -0.49
+and -2.05, while the one file that had collapsed sat at -4.17 across its opening
+six segments.
+
 **Quality is reported, not assumed.** Every run writes `quality_audit.txt` with
 low-confidence segments (`avg_logprob`, `compression_ratio`, `no_speech_prob`)
 and repetition-loop suspects, so you know which passages to distrust instead of

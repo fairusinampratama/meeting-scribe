@@ -185,6 +185,31 @@ def transcribe_wav(wav_path, jsonl, profile):
 # --------------------------------------------------------------------------
 # rendering
 # --------------------------------------------------------------------------
+def worst_window(segs):
+    """Longest run of consecutive segments sharing one avg_logprob, and how bad
+    that value is.
+
+    faster-whisper assigns one avg_logprob per decode window, so a run of
+    identical values IS a window. Reporting the worst one surfaces a failed
+    window, which a percentage cannot: a count of segments crossing a threshold
+    treats six segments of garbage at -4.172 and six ordinary short questions at
+    -0.9 as the same number.
+
+    Note the run length alone means nothing -- healthy transcripts contain runs
+    of 26 and 28. It is the value that matters.
+    """
+    best, run = [], []
+    for s in segs:
+        if run and s["alp"] == run[-1]["alp"]:
+            run.append(s)
+        else:
+            run = [s]
+        # most negative alp wins; among equals, the longer run (hence -len)
+        if not best or (run[0]["alp"], -len(run)) < (best[0]["alp"], -len(best)):
+            best = list(run)
+    return best
+
+
 def render(jsonl, outdir, work, prefix, profile, header_lines, mic_wav=None,
            timeline=None):
     segs = [json.loads(l) for l in open(jsonl, encoding="utf-8") if l.strip()]
@@ -292,6 +317,24 @@ def render(jsonl, outdir, work, prefix, profile, header_lines, mic_wav=None,
     print(f"segments {len(segs)}  paragraphs {len(paras)}  words {words}")
     print(f"coverage {hms(segs[0]['start'])} -> {hms(segs[-1]['end'])}")
     print(f"low-confidence {len(low)} ({100*len(low)/len(segs):.1f}%)  repetition suspects {len(rep)}")
+
+    # Always report the worst decode window, because the percentage above does
+    # not distinguish a few catastrophic segments from many marginal ones.
+    ww = worst_window(segs)
+    if ww:
+        print(f"worst window  alp={ww[0]['alp']} over {len(ww)} segment(s) "
+              f"from {hms(ww[0]['start'])}")
+        # -3.0 is calibrated on a single observed failure (a run at -4.172 that
+        # poisoned a whole file), so it is a smoke alarm, not a measurement.
+        # Anything in the opening two minutes matters more: with
+        # condition_on_previous_text=True a bad first window sets the style for
+        # everything after it.
+        if ww[0]["alp"] < -3.0 and len(ww) >= 3:
+            where = "OPENING WINDOW" if ww[0]["start"] < 120 else "mid-file"
+            print(f"*** WARNING: decode collapse ({where}). {len(ww)} consecutive "
+                  f"segments share alp={ww[0]['alp']}. Text is likely garbage and, "
+                  f"if early, will have degraded the rest of the file. "
+                  f"Check .work/profile.snapshot.yaml and re-run before using this. ***")
     print(f"normalisations {dict(applied) if applied else 'none'}")
     if active is not None:
         thr = profile.speakers["mic_threshold"]
