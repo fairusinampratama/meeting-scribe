@@ -310,20 +310,71 @@ rather than mislabels.
 `.txt`, and its header lists every substitution with a count. If anyone disputes
 a line, the unedited machine output still exists.
 
-**The worst decode window is always reported.** A percentage of segments over a
-confidence threshold cannot tell six segments of garbage apart from six ordinary
-short questions, so every run also prints the worst `avg_logprob` and how many
-consecutive segments share it. faster-whisper assigns one value per decode
-window, so a run of identical values *is* a window. Run length on its own means
-nothing -- healthy transcripts contain runs of 26 and 28; it is the value that
-matters. Measured across five real meetings the worst window sat between -0.49
-and -2.05, while the one file that had collapsed sat at -4.17 across its opening
-six segments.
+**The worst decode window is reported, but it is the weaker signal.** Every run
+prints the worst `avg_logprob` and how many consecutive segments share it --
+faster-whisper assigns one value per decode window, so a run of identical values
+*is* a window, and run length alone means nothing because healthy transcripts
+contain runs of 26 and 28.
+
+It is kept because it is occasionally decisive, and documented as secondary
+because it is usually not. Checked afterwards against six real degraded files,
+it would have caught **one**. The others bottom out near -2.0, indistinguishable
+from healthy runs. `avg_logprob` turned out not to be the signal; see
+**Measuring a run** below for the one that is.
 
 **Quality is reported, not assumed.** Every run writes `quality_audit.txt` with
 low-confidence segments (`avg_logprob`, `compression_ratio`, `no_speech_prob`)
 and repetition-loop suspects, so you know which passages to distrust instead of
 sampling blind.
+
+**Measuring a run.** Every run computes its own numbers, writes them to
+`.work/metrics.json` beside the transcript, and appends one row to
+`metrics-history.jsonl` next to the meeting folders. It ends with a verdict:
+
+```
+metrics       punctuation 96%  1.32x realtime  -> ok
+```
+
+and when something is wrong it says so before the transcript is used, rather
+than after a summary has been written from it:
+
+```
+metrics       punctuation 49%  1.01x realtime  -> PROBLEM
+*** punctuation collapsed at 19 min and did not recover. ***
+```
+
+**The metric is punctuation retention, not confidence.** Whether segments still
+end in `.`, `?` or `!`. Across six real meetings, healthy files sat at 94-99% and
+collapsed ones at 0-7%, with nothing in between, while every confidence-based
+measure put both groups in the same narrow band. It also needs no reference
+transcript, which matters because the obvious metric -- word error rate --
+requires a ground truth that cannot exist for confidential recordings.
+
+It measures **readability, not accuracy**. Word counts stay within a few percent
+even when a file collapses: the words survive, the sentence structure does not.
+
+`punctuation_profile` slices the file into tenths, because the shape matters more
+than the average. A file that is clean throughout and one that is perfect for
+half its length then dead for the rest can share an average, and the second has a
+timestamp after which everything is suspect.
+
+Each row records `profile_sha`, so "quality moved and no code changed" is an
+answerable question.
+
+**The pipeline is not deterministic, so differences need a noise floor.** Two
+runs of one recording, same code and same profile, diverged on the very first
+segment -- `"I see everyone's"` against `"I see everyone still"` -- and
+`condition_on_previous_text` carried the difference through everything after.
+`spread()` measures how far repeated runs of the same input land apart;
+`compare()` reports a change as within noise, beyond noise, or -- when no band
+has been measured -- makes no claim at all. That last case is deliberate. Reading
+meaning into an unqualified difference is how a "quality trend" across five
+meetings came to be reported when it was measuring decode accidents.
+
+**Short clips are not small meetings.** Three minutes of audio decoded on its own
+scores nothing like the same three minutes inside a full recording -- measured at
+16-20% against 100%, because the VAD windowing and conditioning history differ.
+Any benchmark built from clips tests the code path, not the output quality.
 
 **Two views beat one.** A status deck and a running actions file are built by
 different people from different notes. Where they disagree is a finding neither
