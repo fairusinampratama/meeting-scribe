@@ -147,3 +147,71 @@ def healthy(m, min_punctuation=0.60):
     if m.get("punctuation_rate", 0) < min_punctuation:
         return False, f"punctuation rate {m['punctuation_rate']:.0%} below {min_punctuation:.0%}"
     return True, "ok"
+
+
+# --------------------------------------------------------------------------
+# comparing runs
+# --------------------------------------------------------------------------
+
+# Which numbers are worth comparing at all. Segment and word counts move with
+# any decoding difference and say nothing about quality on their own.
+COMPARED = ("punctuation_rate", "words_per_audio_minute", "worst_window_alp",
+            "speed_x_realtime")
+
+
+def spread(runs, keys=COMPARED):
+    """How far apart repeated runs of the SAME input land, per metric.
+
+    This is the measurement that makes every later comparison meaningful. The
+    pipeline is not deterministic -- two runs of one recording produced
+    different text from the first segment onward -- so a difference smaller
+    than this is not evidence of anything.
+
+    Returns {key: {"min", "max", "range", "n"}}. Feed it runs that differ only
+    by having been run twice; feeding it different recordings measures the
+    recordings, not the noise.
+    """
+    out = {}
+    for k in keys:
+        vals = [r[k] for r in runs if isinstance(r.get(k), (int, float))]
+        if len(vals) >= 2:
+            out[k] = {"min": min(vals), "max": max(vals),
+                      "range": round(max(vals) - min(vals), 4), "n": len(vals)}
+    return out
+
+
+def compare(baseline, candidate, noise=None, keys=COMPARED):
+    """What moved between two runs, and whether it moved further than noise.
+
+    `noise` is the output of `spread()` over repeated baseline runs. Without it
+    every difference is reported as unverifiable rather than as a result --
+    deliberately, because reading meaning into unqualified differences is the
+    specific mistake this module exists to prevent.
+    """
+    rows = []
+    for k in keys:
+        a, b = baseline.get(k), candidate.get(k)
+        if not isinstance(a, (int, float)) or not isinstance(b, (int, float)):
+            continue
+        delta = b - a
+        band = (noise or {}).get(k, {}).get("range")
+        if band is None:
+            verdict = "no noise band measured"
+        elif abs(delta) > band:
+            verdict = "beyond noise"
+        else:
+            verdict = "within noise"
+        rows.append({"metric": k, "before": a, "after": b,
+                     "delta": round(delta, 4), "noise_range": band,
+                     "verdict": verdict})
+    return rows
+
+
+def render_comparison(rows):
+    out = ["| metric | before | after | change | noise | verdict |",
+           "|---|---|---|---|---|---|"]
+    for r in rows:
+        band = "-" if r["noise_range"] is None else f"+/-{r['noise_range']}"
+        out.append(f"| {r['metric']} | {r['before']} | {r['after']} | "
+                   f"{r['delta']:+} | {band} | {r['verdict']} |")
+    return chr(10).join(out)

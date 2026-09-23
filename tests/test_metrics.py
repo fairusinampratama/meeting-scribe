@@ -120,3 +120,51 @@ def test_implausible_speed_is_refused():
     assert "wall_minutes" not in m
     ok = M.compute(s, wall_minutes=8.0)          # 1.25x, plausible
     assert ok["speed_x_realtime"] == 1.25
+
+
+# --- comparing runs ---------------------------------------------------------
+
+def run(punct, wpm=110.0, alp=-0.5):
+    return {"punctuation_rate": punct, "words_per_audio_minute": wpm,
+            "worst_window_alp": alp}
+
+
+def test_spread_measures_the_wobble_of_repeated_runs():
+    s = M.spread([run(0.96), run(0.94), run(0.95)])
+    assert s["punctuation_rate"]["range"] == 0.02
+    assert s["punctuation_rate"]["n"] == 3
+
+
+def test_spread_ignores_a_metric_present_only_once():
+    """speed is absent from cached re-renders; one value is not a spread."""
+    s = M.spread([{"punctuation_rate": 0.9, "speed_x_realtime": 1.2},
+                  {"punctuation_rate": 0.9}])
+    assert "speed_x_realtime" not in s
+
+
+def test_a_change_inside_the_noise_band_is_not_a_result():
+    noise = M.spread([run(0.96), run(0.92)])            # range 0.04
+    rows = M.compare(run(0.94), run(0.96), noise)
+    got = {r["metric"]: r["verdict"] for r in rows}
+    assert got["punctuation_rate"] == "within noise"
+
+
+def test_a_change_beyond_the_noise_band_counts():
+    noise = M.spread([run(0.96), run(0.92)])            # range 0.04
+    rows = M.compare(run(0.34), run(0.96), noise)
+    got = {r["metric"]: r["verdict"] for r in rows}
+    assert got["punctuation_rate"] == "beyond noise"
+
+
+def test_without_a_measured_band_nothing_is_claimed():
+    """The whole failure this guards against is reading meaning into an
+    unqualified difference."""
+    rows = M.compare(run(0.34), run(0.96), noise=None)
+    assert all(r["verdict"] == "no noise band measured" for r in rows)
+
+
+def test_comparison_renders_a_table():
+    rows = M.compare(run(0.34), run(0.96), M.spread([run(0.96), run(0.92)]))
+    md = M.render_comparison(rows)
+    assert "punctuation_rate" in md and "beyond noise" in md
+    assert md.count(chr(10)) >= 2
