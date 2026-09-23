@@ -9,7 +9,17 @@ seconds -- about 105x realtime -- and the highlighted tile scored 6.7x to 11.7x
 above every other tile. The person who was muted throughout was never once
 detected.
 
-The limit is not detection, it is transcript granularity: turns change about 5
+Known limit: the ring is unreliable while someone is presenting. A presenter's
+tile can stay highlighted through short interjections from other people, so a
+long screen-share stretch reads as one continuous speaker. Measured on one
+meeting: the presenter scored a near-constant ~74 across a 50-second span that
+demonstrably contained a reply from someone else -- the transcript had that
+person addressing the presenter by name. Treat attribution inside a presentation
+as soft, and treat floor-share percentages from a presentation-heavy meeting as
+an upper bound for the presenter. Where the video and the words disagree, the
+words win.
+
+The other limit is transcript granularity: turns change about 5
 times a minute while segments average 8 seconds, so roughly 40% of segments
 contain a single speaker and the rest straddle a change. Straddling segments are
 left unattributed rather than guessed -- the same rule as everywhere else here.
