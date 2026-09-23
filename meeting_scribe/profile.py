@@ -30,6 +30,8 @@ class Profile:
         self.speakers = d["speakers"]
         self.model = d["model"]
         self.video = d.get("video") or {}
+        # Where this came from, so a run can record the exact profile it used.
+        self.source_path = None
 
         if not self.model.get("threads"):
             self.model["threads"] = max(1, (os.cpu_count() or 4) - 2)
@@ -63,7 +65,9 @@ class Profile:
         if path is None:
             return cls({})
         with open(path, encoding="utf-8") as fh:
-            return cls(yaml.safe_load(fh))
+            p = cls(yaml.safe_load(fh))
+        p.source_path = os.path.abspath(path)
+        return p
 
     def apply_fixes(self, text, counter=None):
         for pattern, replacement in self.fixes:

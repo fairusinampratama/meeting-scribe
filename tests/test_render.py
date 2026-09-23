@@ -142,3 +142,23 @@ def test_silent_mic_track_labels_nothing_as_me(tmp_path):
     body = txt.split("=" * 78, 1)[1]          # skip the header legend
     assert "] ME " not in body
     assert "] Hello." in body, "text still present, just unlabelled"
+
+
+def test_unwritable_output_is_detected(tmp_path):
+    """Word holds an exclusive lock on an open .docx, so it cannot be opened for
+    writing. Publishing must refuse before writing anything, or the .html is
+    corrected while the .docx -- the file that actually gets emailed -- silently
+    stays stale."""
+    import stat
+    from meeting_scribe.cli import _is_locked
+
+    f = tmp_path / "doc.docx"
+    f.write_bytes(b"x")
+    assert _is_locked(str(f)) is False, "a normal file is writable"
+    assert _is_locked(str(tmp_path / "absent.docx")) is False, "absent is not locked"
+
+    os.chmod(f, stat.S_IREAD)
+    try:
+        assert _is_locked(str(f)) is True
+    finally:
+        os.chmod(f, stat.S_IWRITE | stat.S_IREAD)

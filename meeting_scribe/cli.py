@@ -2,6 +2,7 @@
 import argparse
 import os
 import re
+import shutil
 import sys
 
 from .profile import Profile
@@ -69,6 +70,16 @@ def cmd_transcribe(args):
     _json.dump({"source": os.path.abspath(args.video)},
                open(os.path.join(work, "source.json"), "w", encoding="utf-8"))
 
+    # Record the profile that produced this run. It decides the glossary, the
+    # glossary is the initial_prompt, and the prompt demonstrably changes the
+    # decoding: one meeting was transcribed twice from byte-identical audio and
+    # came out at 6.6% low-confidence unpunctuated and 0.5% punctuated. The
+    # profile was the only input that had changed -- and because it is
+    # gitignored and unsnapshotted, the difference could not be diagnosed.
+    # Everything else about a run is already recoverable; this was the gap.
+    if profile.source_path and os.path.exists(profile.source_path):
+        shutil.copy2(profile.source_path, os.path.join(work, "profile.snapshot.yaml"))
+
     mix_track = args.track or profile.tracks.get("mix") or 1
     mix_wav = T.decode_track(args.video, os.path.join(work, "mix16k.wav"), mix_track)
 
@@ -127,6 +138,17 @@ def cmd_transcribe(args):
         print(f"  floor: {row['who']:<18}{row['minutes']:5.1f} min  {row['share']:5.1f}%")
 
 
+def _is_locked(path):
+    """True if the file exists but cannot be opened for writing."""
+    if not os.path.exists(path):
+        return False
+    try:
+        with open(path, "r+b"):
+            return False
+    except OSError:
+        return True
+
+
 def cmd_publish(args):
     src = os.path.abspath(args.markdown)
     stem = os.path.splitext(src)[0]
@@ -137,6 +159,18 @@ def cmd_publish(args):
                 title = line[2:].strip()
                 break
         title = title or os.path.basename(stem)
+    # Check every target is writable BEFORE writing any of them. Word holds an
+    # exclusive lock on an open .docx, and writing the .html anyway leaves a
+    # corrected page beside a stale document -- and the document is the one that
+    # gets attached to an email.
+    locked = [t for t in (stem + ".html", stem + ".docx") if _is_locked(t)]
+    if locked:
+        raise SystemExit(
+            "refusing to publish: " + ", ".join(os.path.basename(f) for f in locked) +
+            " is open in another program (Word holds a lock on an open .docx).\n"
+            "Nothing was written. Close it and run this again, so the .html and "
+            ".docx cannot end up disagreeing.")
+
     n = P.to_html(src, stem + ".html", title)
     print(f"html  {stem}.html  ({n} bytes)")
     heads, tables = P.to_docx(src, stem + ".docx")

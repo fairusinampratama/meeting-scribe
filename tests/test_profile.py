@@ -71,3 +71,17 @@ def test_example_yaml_parses_as_yaml():
     with open(os.path.join(HERE, "profile.example.yaml"), encoding="utf-8") as fh:
         data = yaml.safe_load(fh)
     assert set(data) >= {"project", "glossary", "fixes", "tracks", "model"}
+
+
+def test_load_records_where_the_profile_came_from(tmp_path):
+    """A run must be able to record the exact profile it used. The glossary is
+    the initial_prompt and the prompt changes the decoding, so a profile that
+    leaves no trace makes a run impossible to reproduce or diff."""
+    p = tmp_path / "profile.yaml"
+    p.write_text('project: demo\nglossary: alpha beta gamma\n', encoding="utf-8")
+    prof = Profile.load(str(p))
+    assert prof.source_path == str(p.resolve())
+
+
+def test_defaults_have_no_source_path():
+    assert Profile({}).source_path is None

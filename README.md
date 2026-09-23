@@ -319,6 +319,22 @@ sampling blind.
 different people from different notes. Where they disagree is a finding neither
 produces alone -- and where they agree something is missing, it is missing.
 
+**Every run records its own profile.** `.work/profile.snapshot.yaml` is a copy of
+the profile that produced the run. The glossary is the `initial_prompt`, and the
+prompt changes the decoding: one meeting was transcribed twice from byte-identical
+audio and came out **301 segments at 6.6% low-confidence, lowercase and
+unpunctuated** one time and **393 segments at 0.5%, correctly punctuated** the
+other. The profile was the only input that had changed -- and because it is
+gitignored and was not snapshotted, the two could not be diffed. Everything else
+about a run was already recoverable; this was the one gap.
+
+**Conditioning is a trade, and it is not free.** `condition_on_previous_text=True`
+is what makes the glossary stick past the first 30-second window, but it also
+lets one bad window set the style for everything after it. In the failure above,
+a single 46-second window decoded as garbage at `avg_logprob -4.172` and the rest
+of the file inherited its lowercase, unpunctuated style. If a transcript comes
+out uniformly styleless, suspect the opening window, not the audio.
+
 **Resume is free.** Segments are flushed to `segments.jsonl` as they are
 produced; an interrupted run continues from the last committed timestamp.
 
