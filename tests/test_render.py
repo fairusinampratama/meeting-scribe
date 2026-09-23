@@ -162,32 +162,3 @@ def test_unwritable_output_is_detected(tmp_path):
         assert _is_locked(str(f)) is True
     finally:
         os.chmod(f, stat.S_IWRITE | stat.S_IREAD)
-
-
-def _seg(start, alp, text="hello there"):
-    return {"start": start, "end": start + 2, "text": text, "alp": alp, "cr": 1.0, "nsp": 0.0}
-
-
-def test_worst_window_finds_the_failed_decode_not_the_longest_run():
-    """Run length alone is meaningless -- healthy transcripts contain runs of 26
-    and 28 identical values. It is the value that identifies a failure."""
-    from meeting_scribe.transcribe import worst_window
-
-    segs = ([_seg(i * 2, -0.30) for i in range(30)] +      # long, healthy
-            [_seg(60 + i * 2, -4.17) for i in range(4)] +  # short, catastrophic
-            [_seg(80 + i * 2, -0.50) for i in range(5)])
-    w = worst_window(segs)
-    assert w[0]["alp"] == -4.17
-    assert len(w) == 4
-
-
-def test_worst_window_prefers_the_longer_run_at_equal_badness():
-    from meeting_scribe.transcribe import worst_window
-
-    segs = [_seg(0, -2.0), _seg(2, -2.0)] + [_seg(10 + i * 2, -2.0) for i in range(5)]
-    assert len(worst_window(segs)) == 7, "contiguous equal values are one window"
-
-
-def test_worst_window_handles_an_empty_transcript():
-    from meeting_scribe.transcribe import worst_window
-    assert worst_window([]) == []

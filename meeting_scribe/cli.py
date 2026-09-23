@@ -3,6 +3,9 @@ import argparse
 import os
 import re
 import shutil
+import json as _json
+import datetime
+import time
 import sys
 
 from .profile import Profile
@@ -10,6 +13,7 @@ from . import transcribe as T
 from . import publish as P
 from . import actions as A
 from . import reconcile as RC
+from . import metrics as MX
 from . import video as V
 
 
@@ -106,7 +110,10 @@ def cmd_transcribe(args):
         except Exception as exc:
             print(f"[warn] active-speaker detection failed ({exc}); continuing without it")
 
-    T.transcribe_wav(mix_wav, os.path.join(work, "segments.jsonl"), profile)
+    _t0 = time.time()
+    did_decode = T.transcribe_wav(mix_wav, os.path.join(work, "segments.jsonl"), profile)
+    # Only a run that actually decoded has a meaningful speed.
+    wall_minutes = (time.time() - _t0) / 60 if did_decode else None
 
     header = [args.title or f"{profile.project.upper()} meeting - {date}"]
     if args.meta:
@@ -136,6 +143,58 @@ def cmd_transcribe(args):
 
     for row in V.timeline_summary(timeline):
         print(f"  floor: {row['who']:<18}{row['minutes']:5.1f} min  {row['share']:5.1f}%")
+
+    _record_metrics(work, outdir, args, profile, wall_minutes)
+
+
+def _record_metrics(work, outdir, args, profile, wall_minutes):
+    """Write this run's numbers, and append them to a rolling history.
+
+    Two files because they answer different questions. `.work/metrics.json`
+    belongs to one run and sits beside the transcript it describes.
+    `metrics-history.jsonl` accumulates across runs so a change in behaviour has
+    something to be a change *from* -- which is exactly what was missing when a
+    transcript silently degraded and nothing could be compared against anything.
+
+    Never fatal. A run that produced a transcript has done its job; failing it
+    over bookkeeping would be the wrong trade.
+    """
+    try:
+        import hashlib
+
+        seg_path = os.path.join(work, "segments.jsonl")
+        segs = [_json.loads(l) for l in open(seg_path, encoding="utf-8") if l.strip()]
+        m = MX.compute(segs, wall_minutes=wall_minutes)
+
+        # Which profile produced this. The glossary is the initial_prompt and the
+        # prompt changes the decoding, so a quality shift with no code change is
+        # answered by this line -- and previously could not be answered at all.
+        snap = os.path.join(work, "profile.snapshot.yaml")
+        if os.path.exists(snap):
+            m["profile_sha"] = hashlib.sha256(open(snap, "rb").read()).hexdigest()[:12]
+
+        m["run_at"] = datetime.datetime.now().isoformat(timespec="seconds")
+        m["source"] = os.path.abspath(args.video)
+        m["outdir"] = os.path.abspath(outdir)
+
+        with open(os.path.join(work, "metrics.json"), "w", encoding="utf-8") as fh:
+            _json.dump(m, fh, indent=2)
+
+        history = os.path.join(os.path.dirname(os.path.abspath(outdir)),
+                               "metrics-history.jsonl")
+        with open(history, "a", encoding="utf-8") as fh:
+            fh.write(_json.dumps(m) + '\n')
+
+        ok, why = MX.healthy(m)
+        speed = (f"{m['speed_x_realtime']}x realtime" if m.get("speed_x_realtime")
+                 else "cached, not timed")
+        print(f"metrics       punctuation {m['punctuation_rate']:.0%}  "
+              f"{speed}  -> {'ok' if ok else 'PROBLEM'}")
+        if not ok:
+            print(f"*** {why}. Treat everything after that point as unreliable "
+                  f"and re-run before quoting it. ***")
+    except Exception as exc:
+        print(f"[warn] could not record metrics ({exc}); the transcript is unaffected")
 
 
 def _is_locked(path):
