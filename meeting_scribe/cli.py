@@ -103,6 +103,25 @@ def cmd_transcribe(args):
     T.render(os.path.join(work, "segments.jsonl"), outdir, work, prefix, profile,
              header, mic_wav=mic_wav, timeline=timeline)
 
+    # Keyframes: what was on screen when people pointed at it. Selection is the
+    # work, not extraction -- a 41-minute meeting has ~57 content changes and
+    # most are scrolling.
+    if profile.video and not args.no_frames:
+        try:
+            import json as _json
+            segs = [_json.loads(l) for l in open(os.path.join(work, "segments.jsonl"),
+                                                 encoding="utf-8") if l.strip()]
+            changes = V.scene_changes(args.video, profile)
+            picks = V.select_keyframes(changes, segs, top=args.frames)
+            written = V.extract_keyframes(args.video, picks, os.path.join(outdir, "frames"))
+            total_deictic = sum(V.deictic_count(s.get("text")) for s in segs)
+            print(f"[frames] {len(changes)} content changes -> {len(written)} keyframes "
+                  f"({total_deictic} screen references in the transcript)")
+            for w in written:
+                print(f"  {os.path.basename(w['path']):<22} {w['deictic']} reference(s) follow")
+        except Exception as exc:
+            print(f"[warn] keyframe extraction failed ({exc}); continuing")
+
     for row in V.timeline_summary(timeline):
         print(f"  floor: {row['who']:<18}{row['minutes']:5.1f} min  {row['share']:5.1f}%")
 
@@ -194,7 +213,9 @@ def main(argv=None):
     t.add_argument("--title", default="")
     t.add_argument("--meta", default="")
     t.add_argument("--track", type=int, help="override which audio track to transcribe")
-    t.add_argument("--no-speakers", action="store_true", help="skip mic-based speaker labels")
+    t.add_argument("--no-speakers", action="store_true", help="skip speaker detection")
+    t.add_argument("--no-frames", action="store_true", help="skip keyframe extraction")
+    t.add_argument("--frames", type=int, default=12, help="keyframes to extract (default 12)")
     t.set_defaults(func=cmd_transcribe)
 
     p = sub.add_parser("publish", help="summary markdown -> HTML + DOCX")

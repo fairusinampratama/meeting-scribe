@@ -84,3 +84,56 @@ def test_layout_absent_from_profile_yields_no_timeline():
     rows, cols, names, thr = V.load_layout(P)
     assert rows == [] and cols == [] and names == []
     assert thr == 15.0
+
+
+# --- keyframe selection ------------------------------------------------------
+
+def seg(start, end, text):
+    return {"start": start, "end": end, "text": text}
+
+
+def test_deictic_counting():
+    assert V.deictic_count("can you go down to number 15, this one here") >= 3
+    assert V.deictic_count("the label number is twenty characters") == 0
+    assert V.deictic_count(None) == 0
+
+
+def test_selection_prefers_screen_pointing_language():
+    """Extracting every content change is useless -- most are scrolling. The
+    ones worth a look are those the conversation then points at."""
+    changes = [10.0, 100.0, 200.0]
+    segs = ([seg(12, 20, "so as I was saying about the schedule")] +
+            [seg(102, 110, "can you go down, this one, number 15")] +
+            [seg(202, 210, "right")])
+    picks = V.select_keyframes(changes, segs, top=1)
+    assert len(picks) == 1
+    assert picks[0]["t"] == 102.0, "should pick the change followed by pointing"
+
+
+def test_selection_spreads_across_the_meeting():
+    """Without a gap rule the whole budget lands in one busy stretch."""
+    changes = [100.0, 110.0, 120.0, 400.0]
+    segs = [seg(t + 2, t + 8, "this one, go down, number 3") for t in changes]
+    picks = V.select_keyframes(changes, segs, top=4, min_gap=45.0)
+    times = sorted(p["t"] for p in picks)
+    assert all(b - a >= 45.0 for a, b in zip(times, times[1:]))
+
+
+def test_selection_is_capped():
+    changes = [float(i * 100) for i in range(30)]
+    segs = [seg(t + 2, t + 8, "this one") for t in changes]
+    assert len(V.select_keyframes(changes, segs, top=5)) <= 5
+
+
+def test_selection_stops_before_pure_scrolling():
+    """Changes nobody refers to should not fill the budget."""
+    changes = [float(i * 100) for i in range(20)]
+    segs = [seg(2, 8, "this one, number 4")]        # only the first is referenced
+    picks = V.select_keyframes(changes, segs, top=12)
+    assert len(picks) < 12
+    assert picks[0]["deictic"] > 0
+
+
+def test_settle_offset_avoids_the_transition_frame():
+    picks = V.select_keyframes([100.0], [seg(102, 108, "this one")], top=1, settle=2.0)
+    assert picks[0]["t"] == 102.0

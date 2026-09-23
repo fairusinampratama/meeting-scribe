@@ -21,8 +21,8 @@ def _mark(outdir, source):
 def test_fresh_directory_is_used(tmp_path):
     video = tmp_path / "2026-09-11_08-31-52.mp4"
     video.write_bytes(b"")
-    out = _resolve_outdir(str(video), "2026-09-11", "foms", None)
-    assert os.path.basename(out) == "2026-09-11-foms-meeting"
+    out = _resolve_outdir(str(video), "2026-09-11", "acme", None)
+    assert os.path.basename(out) == "2026-09-11-acme-meeting"
 
 
 def test_same_recording_reuses_its_directory(tmp_path):
@@ -30,9 +30,9 @@ def test_same_recording_reuses_its_directory(tmp_path):
     resume and re-render work."""
     video = tmp_path / "2026-09-11_08-31-52.mp4"
     video.write_bytes(b"")
-    first = _resolve_outdir(str(video), "2026-09-11", "foms", None)
+    first = _resolve_outdir(str(video), "2026-09-11", "acme", None)
     _mark(first, str(video))
-    second = _resolve_outdir(str(video), "2026-09-11", "foms", None)
+    second = _resolve_outdir(str(video), "2026-09-11", "acme", None)
     assert first == second
 
 
@@ -44,10 +44,10 @@ def test_different_recording_same_date_gets_its_own_directory(tmp_path):
     morning.write_bytes(b"")
     later.write_bytes(b"")
 
-    first = _resolve_outdir(str(morning), "2026-09-11", "foms", None)
+    first = _resolve_outdir(str(morning), "2026-09-11", "acme", None)
     _mark(first, str(morning))
 
-    second = _resolve_outdir(str(later), "2026-09-11", "foms", None)
+    second = _resolve_outdir(str(later), "2026-09-11", "acme", None)
     assert second != first
     assert "1110" in os.path.basename(second), "should disambiguate by recording time"
 
@@ -58,7 +58,7 @@ def test_third_recording_same_date_still_separates(tmp_path):
     for name in videos:
         v = tmp_path / name
         v.write_bytes(b"")
-        out = _resolve_outdir(str(v), "2026-09-11", "foms", None)
+        out = _resolve_outdir(str(v), "2026-09-11", "acme", None)
         _mark(out, str(v))
         seen.append(out)
     assert len(set(seen)) == 3, f"expected 3 distinct dirs, got {seen}"
@@ -68,19 +68,19 @@ def test_explicit_outdir_wins(tmp_path):
     video = tmp_path / "2026-09-11_08-31-52.mp4"
     video.write_bytes(b"")
     forced = tmp_path / "somewhere-else"
-    out = _resolve_outdir(str(video), "2026-09-11", "foms", str(forced))
+    out = _resolve_outdir(str(video), "2026-09-11", "acme", str(forced))
     assert out == str(forced)
 
 
 def test_unreadable_marker_does_not_crash(tmp_path):
     video = tmp_path / "2026-09-11_08-31-52.mp4"
     video.write_bytes(b"")
-    out = _resolve_outdir(str(video), "2026-09-11", "foms", None)
+    out = _resolve_outdir(str(video), "2026-09-11", "acme", None)
     work = os.path.join(out, ".work")
     os.makedirs(work, exist_ok=True)
     with open(os.path.join(work, "source.json"), "w", encoding="utf-8") as fh:
         fh.write("{ not json")
-    assert _resolve_outdir(str(video), "2026-09-11", "foms", None) == out
+    assert _resolve_outdir(str(video), "2026-09-11", "acme", None) == out
 
 
 # --- filename-format independence -------------------------------------------
@@ -99,9 +99,9 @@ from meeting_scribe.profile import Profile
     "2026-09-14 08-30-00.mkv",
 ])
 def test_prefix_is_filename_format_independent(name):
-    prefix, date = _prefix(name, Profile({"project": "foms"}))
+    prefix, date = _prefix(name, Profile({"project": "acme"}))
     assert date == "2026-09-14"
-    assert prefix == "2026-09-14-foms"
+    assert prefix == "2026-09-14-acme"
 
 
 @pytest.mark.parametrize("first,second", [
@@ -113,8 +113,8 @@ def test_same_day_disambiguation_works_for_both_formats(tmp_path, first, second)
     a, b = tmp_path / first, tmp_path / second
     a.write_bytes(b"")
     b.write_bytes(b"")
-    out_a = _resolve_outdir(str(a), "2026-09-14", "foms", None)
+    out_a = _resolve_outdir(str(a), "2026-09-14", "acme", None)
     _mark(out_a, str(a))
-    out_b = _resolve_outdir(str(b), "2026-09-14", "foms", None)
+    out_b = _resolve_outdir(str(b), "2026-09-14", "acme", None)
     assert out_a != out_b
     assert "1300" in os.path.basename(out_b)

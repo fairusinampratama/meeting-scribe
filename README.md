@@ -101,6 +101,27 @@ answers who held the floor and who was present but silent.
 Set the `video` block in `profile.yaml` (tile rectangles and names) to enable it.
 Without it the feature stays off and nothing changes.
 
+## Keyframes: what was on screen
+
+Meeting transcripts are full of language that points at a screen -- *"this one"*,
+*"can you go down"*, *"number 15"*. One meeting measured **110 of them, one every
+56 seconds**. None of it is recoverable from audio.
+
+Content changes are detected by frame differencing, **excluding the participant
+strip** -- the speaker highlight moving is a large, frequent pixel delta in
+exactly the wrong place, and including it makes every turn look like a slide
+change.
+
+**Selection is the work, not extraction.** A 41-minute meeting produced 69
+content changes, most of them scrolling. Candidates are ranked by how much
+screen-pointing language follows them, spread across the meeting by a minimum
+gap, and capped (`--frames`, default 12). Pure scrolling stops filling the
+budget once referenced changes run out.
+
+Frames land in `<meeting>/frames/` as `MMmSSs-dN.png`, where `N` is how many
+screen references follow. They hold participant names and client documents, so
+they are gitignored and stay beside the transcript.
+
 ## Speaker labels without diarization (fallback)
 
 Proper diarization (pyannote) needs a gated model and a Hugging Face token,
