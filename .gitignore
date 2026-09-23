@@ -41,3 +41,9 @@ desktop.ini
 # Untracked until it has produced minutes/dev-brief/actions.csv on a real meeting.
 skill/
 models/
+
+# Extracted video frames: participant names, PII discussions, client documents.
+# Strictly more sensitive than the audio. Never commit.
+frames/
+*.png
+*.jpg

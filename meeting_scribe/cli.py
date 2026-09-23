@@ -7,6 +7,7 @@ import sys
 from .profile import Profile
 from . import transcribe as T
 from . import publish as P
+from . import actions as A
 
 
 def _prefix(video, profile):
@@ -132,6 +133,15 @@ def cmd_snapshot(args):
     print(f"{min(len(kept), keep)} snapshot(s) retained")
 
 
+def cmd_actions(args):
+    """Ranked view of the running actions file."""
+    import datetime
+    asof = (datetime.date(*map(int, args.asof.split("-"))) if args.asof
+            else datetime.date.today())
+    rows = A.load(os.path.abspath(args.file))
+    print(A.render_markdown(rows, asof, top=args.top))
+
+
 def cmd_probe(args):
     """Show what a recording actually contains -- useful for confirming OBS
     settings took effect before relying on them."""
@@ -178,6 +188,12 @@ def main(argv=None):
     sn.add_argument("file")
     sn.add_argument("--keep", type=int, default=30, help="snapshots to retain (default 30)")
     sn.set_defaults(func=cmd_snapshot)
+
+    ac = sub.add_parser("actions", help="ranked view of a running actions file")
+    ac.add_argument("file")
+    ac.add_argument("--asof", help="date to rank against (default: today)")
+    ac.add_argument("--top", type=int, default=8, help="rows to show (default 8)")
+    ac.set_defaults(func=cmd_actions)
 
     pr = sub.add_parser("probe", help="inspect a recording's tracks, fps and bitrate")
     pr.add_argument("video")

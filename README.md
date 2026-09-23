@@ -28,6 +28,7 @@ meeting-scribe transcribe "2026-01-31_09-00-00.mp4"
 meeting-scribe publish 2026-01-31-acme-summary.md
 meeting-scribe probe "2026-01-31_09-00-00.mp4"
 meeting-scribe snapshot actions.csv      # before editing a tracking file
+meeting-scribe actions actions.csv       # ranked view: what needs attention today
 ```
 
 Output lands in `<video-dir>/<date>-<project>-meeting/`:
@@ -55,6 +56,22 @@ names. Only `profile.example.yaml` is committed.
 `snapshot` writes a timestamped copy into `history/` beside the file and keeps the
 last 30 (`--keep`). Intended for a long-lived actions/tracking file: a transcript
 can be regenerated from the recording, months of accumulated notes cannot.
+
+`actions` ranks a tracking file rather than listing it, and caps the output
+(`--top`, default 8). It exists because a flat "silent 5+ days" filter stopped
+being a signal: on a real project at 79 rows it matched 34 of 66 open items, so
+the table opened every report and nobody could act on it.
+
+Ranking weights **blocking** and **unowned** above age, because an item nobody
+owns cannot progress by itself and a blocker stops other work. Two choices are
+worth knowing about:
+
+- **Recency counts against urgency.** An item discussed today is in somebody's
+  hands; a blocker nobody has mentioned in a fortnight is the one that quietly
+  sinks a date. An early version gave a bonus for "moved today" and pushed a
+  14-day-silent blocker off the table on meeting days.
+- **Every row states why it is there** — `blocks X`, `overdue 6d`, `silent 14d`.
+  A ranked list without reasons is just a shorter list.
 
 Runs resume: segments are flushed to `.work/segments.jsonl` as they are produced, so
 re-running after an interruption continues from the last committed timestamp. A cached
