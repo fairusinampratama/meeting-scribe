@@ -322,6 +322,34 @@ it would have caught **one**. The others bottom out near -2.0, indistinguishable
 from healthy runs. `avg_logprob` turned out not to be the signal; see
 **Measuring a run** below for the one that is.
 
+**Decoding happens in blocks, and that is what stops a collapse spreading.**
+`condition_on_previous_text=True` keeps the glossary alive past the first
+30-second window; the price is that a failed window sets the style for
+everything after it. One 46-second failure once cost the remaining 22 minutes of
+a 41-minute file.
+
+Blocks cap that. Each one re-seeds from the glossary, so a failure stops at the
+seam. Seams are placed at the quietest point within 30 seconds of each target
+boundary -- cutting on a fixed interval lands mid-word whenever somebody is
+talking, and a word split across two decodes is lost from both.
+
+Measured on two recordings that collapse in a single pass, `--chunk-minutes 5`
+against one pass:
+
+| | one pass | 5-minute blocks |
+|---|---|---|
+| recording A | 49%, 40% degraded | **85%, none** |
+| recording B | 66%, 30% degraded | **95%, none** |
+
+Word counts moved by under 2%, so this recovers structure rather than changing
+content. 10-minute blocks were also measured and were not enough: a failure
+still cost a third of the file. Block size is `chunk_minutes`; 0 decodes in one
+pass.
+
+The containment is visible rather than inferred. On one run the first block
+failed at minute 1 and stayed broken to minute 9; recovery landed exactly at the
+10-minute seam and the remaining 16 minutes were clean.
+
 **Quality is reported, not assumed.** Every run writes `quality_audit.txt` with
 low-confidence segments (`avg_logprob`, `compression_ratio`, `no_speech_prob`)
 and repetition-loop suspects, so you know which passages to distrust instead of
