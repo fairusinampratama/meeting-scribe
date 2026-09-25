@@ -14,6 +14,8 @@ DEFAULTS = {
     "speakers": {"mic_label": "ME", "other_label": "CALL", "mic_threshold": 0.8},
     "model": {"name": "large-v3-turbo", "compute_type": "int8", "threads": 0},
     "video": {},
+    # 0 disables chunking and decodes the file in one pass.
+    "chunk_minutes": 0,
 }
 
 
@@ -30,6 +32,7 @@ class Profile:
         self.speakers = d["speakers"]
         self.model = d["model"]
         self.video = d.get("video") or {}
+        self.chunk_minutes = float(d.get("chunk_minutes") or 0)
         # Where this came from, so a run can record the exact profile it used.
         self.source_path = None
 

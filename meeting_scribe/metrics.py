@@ -56,22 +56,49 @@ def punctuation_profile(segments, bins=10):
             for i in range(bins)]
 
 
-def collapse_point(segments, bins=10, floor=0.25, stays_below=0.35):
-    """Seconds into the recording where punctuation died and did not recover.
+def degraded_spans(segments, bins=10, floor=0.25):
+    """Contiguous stretches where punctuation has gone, as (start, end) seconds.
 
-    None when it never does. Requires the drop to persist to the end of the
-    file: an isolated bad patch is a bad patch, whereas the failure worth
-    naming is the one that poisons everything after it, because with
-    conditioning on there is no recovery from it.
+    This replaced an earlier `collapse_point` that only reported a drop which
+    **persisted to the end of the file**. That was correct while the decoder ran
+    in one pass, because conditioning meant a collapse never recovered. Decoding
+    in blocks re-seeds at each seam, so a block can fail and the next one come
+    back clean -- and the old rule reported that file as healthy while nine
+    minutes of it were unreadable. A health check that under-reports is worse
+    than none, because it is trusted.
     """
     prof = punctuation_profile(segments, bins)
     if not prof:
-        return None
+        return []
     n = len(segments)
+    spans, start = [], None
     for i, rate in enumerate(prof):
-        if rate < floor and all(r < stays_below for r in prof[i:]):
-            return segments[i * n // bins].get("start")
-    return None
+        bad = rate < floor
+        if bad and start is None:
+            start = i
+        elif not bad and start is not None:
+            spans.append((start, i)); start = None
+    if start is not None:
+        spans.append((start, bins))
+    out = []
+    for a, b in spans:
+        t0 = segments[a * n // bins].get("start")
+        t1 = (segments[min(b * n // bins, n - 1)].get("end")
+              if b < bins else segments[-1].get("end"))
+        out.append((t0, t1))
+    return out
+
+
+def collapse_point(segments, bins=10, floor=0.25):
+    """Start of the worst degraded stretch, in seconds, or None.
+
+    No longer requires the drop to reach the end of the file -- see
+    `degraded_spans`.
+    """
+    spans = degraded_spans(segments, bins, floor)
+    if not spans:
+        return None
+    return max(spans, key=lambda s: s[1] - s[0])[0]
 
 
 def worst_window(segments):
@@ -90,6 +117,12 @@ def worst_window(segments):
         if not best or (run[0].get("alp", 0), -len(run)) < (best[0].get("alp", 0), -len(best)):
             best = list(run)
     return best[0].get("alp"), len(best), best[0].get("start")
+
+
+def _degraded_fraction(segments, bins=10, floor=0.25):
+    """Share of the file sitting below the floor, 0.0-1.0."""
+    prof = punctuation_profile(segments, bins)
+    return (sum(1 for r in prof if r < floor) / len(prof)) if prof else 0.0
 
 
 def compute(segments, wall_minutes=None):
@@ -114,6 +147,8 @@ def compute(segments, wall_minutes=None):
         "punctuation_rate": round(punctuation_rate(segments), 4),
         "punctuation_profile": [round(p, 3) for p in punctuation_profile(segments)],
         "collapse_at_seconds": collapse_point(segments),
+        "degraded_fraction": round(_degraded_fraction(segments), 3),
+        "degraded_spans": [[round(a, 1), round(b, 1)] for a, b in degraded_spans(segments)],
         "worst_window_alp": ww[0] if ww else None,
         "worst_window_segments": ww[1] if ww else None,
         "worst_window_at_seconds": ww[2] if ww else None,
@@ -132,7 +167,7 @@ def compute(segments, wall_minutes=None):
     return out
 
 
-def healthy(m, min_punctuation=0.60):
+def healthy(m, min_punctuation=0.60, max_degraded=0.15):
     """Whether a run looks usable, with the reason when it does not.
 
     One deliberately loose threshold rather than several tight ones. Every
@@ -142,8 +177,12 @@ def healthy(m, min_punctuation=0.60):
     """
     if not m or not m.get("segments"):
         return False, "no segments"
-    if m.get("collapse_at_seconds") is not None:
-        return False, f"punctuation collapsed at {m['collapse_at_seconds'] / 60:.0f} min and did not recover"
+    frac = m.get("degraded_fraction", 0.0)
+    if frac >= max_degraded:
+        spans = m.get("degraded_spans") or []
+        where = ", ".join(f"{a/60:.0f}-{b/60:.0f} min" for a, b in spans[:3])
+        return False, (f"{frac:.0%} of the transcript has lost its sentence structure"
+                       + (f" ({where})" if where else ""))
     if m.get("punctuation_rate", 0) < min_punctuation:
         return False, f"punctuation rate {m['punctuation_rate']:.0%} below {min_punctuation:.0%}"
     return True, "ok"

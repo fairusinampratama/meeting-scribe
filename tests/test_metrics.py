@@ -37,11 +37,17 @@ def test_collapse_point_reports_when_it_stopped_recovering():
     assert at == 500.0, "50 good segments at 10s each -> collapse at 500s"
 
 
-def test_a_blip_is_not_a_collapse():
-    """One bad decile that recovers must not be reported -- a gate that fires
-    on recoverable noise gets switched off."""
+def test_a_blip_does_not_fail_the_run():
+    """One bad decile is recorded but tolerated -- a gate that fires on
+    recoverable noise gets switched off, and then it protects nothing.
+
+    This previously asserted collapse_point() was None. That changed with block
+    decoding: a short dip IS now located and reported, it just does not fail the
+    run on its own."""
     texts = ["Fine."] * 30 + ["run on"] * 10 + ["Fine."] * 60
-    assert M.collapse_point(segs(texts)) is None
+    m = M.compute(segs(texts))
+    assert m["degraded_fraction"] <= 0.10
+    assert M.healthy(m)[0] is True
 
 
 def test_healthy_file_has_no_collapse_point():
@@ -85,7 +91,7 @@ def test_healthy_rejects_a_collapsed_run_and_says_why():
     m = M.compute(segs(["Fine."] * 50 + ["run on"] * 50))
     ok, why = M.healthy(m)
     assert ok is False
-    assert "collapsed" in why
+    assert "sentence structure" in why
 
 
 def test_healthy_accepts_a_good_run():
@@ -168,3 +174,56 @@ def test_comparison_renders_a_table():
     md = M.render_comparison(rows)
     assert "punctuation_rate" in md and "beyond noise" in md
     assert md.count(chr(10)) >= 2
+
+
+# --- degradation that recovers ----------------------------------------------
+
+def test_a_mid_file_collapse_that_recovers_is_still_reported():
+    """The regression this fixes. Decoding in blocks re-seeds at each seam, so a
+    block can fail and the next come back clean. The old rule required the drop
+    to persist to the end of the file and called such a run healthy while a
+    third of it was unreadable."""
+    texts = ["Fine."] * 10 + ["run on"] * 30 + ["Fine."] * 60
+    m = M.compute(segs(texts, step=10.0))
+    assert m["degraded_fraction"] >= 0.2
+    ok, why = M.healthy(m)
+    assert ok is False
+    assert "sentence structure" in why
+
+
+def test_the_span_is_located_in_time_not_just_counted():
+    m = M.compute(segs(["Fine."] * 10 + ["run on"] * 30 + ["Fine."] * 60, step=10.0))
+    spans = m["degraded_spans"]
+    assert len(spans) == 1
+    start, end = spans[0]
+    assert 90 <= start <= 110, f"span starts at {start}s, expected about 100s"
+    assert end > start
+
+
+def test_a_clean_file_reports_no_degradation():
+    m = M.compute(segs(["Fine."] * 100))
+    assert m["degraded_fraction"] == 0.0
+    assert m["degraded_spans"] == []
+    assert M.healthy(m)[0] is True
+
+
+def test_one_bad_tenth_is_tolerated():
+    """A single weak stretch is not a failure -- a gate that fires on ordinary
+    variation gets switched off, and then it protects nothing."""
+    m = M.compute(segs(["Fine."] * 45 + ["run on"] * 10 + ["Fine."] * 45))
+    assert M.healthy(m)[0] is True
+
+
+def test_two_separate_bad_stretches_are_both_reported():
+    texts = ["Fine."] * 20 + ["run on"] * 15 + ["Fine."] * 30 + ["run on"] * 15 + ["Fine."] * 20
+    m = M.compute(segs(texts, step=10.0))
+    assert len(m["degraded_spans"]) == 2
+    assert M.healthy(m)[0] is False
+
+
+def test_collapse_point_now_means_the_worst_stretch():
+    """Kept for continuity, but its meaning changed: it is the start of the
+    longest degraded stretch, not of one that runs to the end."""
+    m = M.compute(segs(["Fine."] * 10 + ["run on"] * 30 + ["Fine."] * 60, step=10.0))
+    assert m["collapse_at_seconds"] is not None
+    assert abs(m["collapse_at_seconds"] - m["degraded_spans"][0][0]) < 1e-6

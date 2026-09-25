@@ -116,6 +116,57 @@ def mic_overlap(active, frame_s, start, end):
 # --------------------------------------------------------------------------
 # transcription
 # --------------------------------------------------------------------------
+def split_points(audio, block_seconds, sr=SR, search_seconds=30.0, win_seconds=1.0):
+    """Sample indices at which to cut a recording into blocks.
+
+    Why cut at all: the decoder is run with `condition_on_previous_text=True`,
+    which is what keeps the glossary alive past the first 30-second window. The
+    cost is that one bad window sets the style for everything after it -- one
+    46-second failure once cost the remaining 22 minutes of a 41-minute file.
+    Decoding in blocks caps that blast radius at a single block, and each block
+    starts from the glossary again rather than from whatever came before.
+
+    Why not cut on a fixed interval: that lands mid-word roughly whenever
+    somebody is talking. Searching a window either side of each boundary and
+    cutting at the quietest point costs almost nothing and puts the seam in a
+    pause instead.
+
+    Returns [0, ..., len(audio)]. A block is never shorter than half the target,
+    and a short tail is folded into the previous block rather than left as a
+    stub, because a two-minute block carries too little context to decode well.
+    """
+    import numpy as np
+
+    n = len(audio)
+    block = int(block_seconds * sr)
+    if block <= 0 or n <= block:
+        return [0, n]
+
+    win = max(1, int(win_seconds * sr))
+    search = int(search_seconds * sr)
+    cuts = [0]
+    target = block
+    while target < n:
+        if n - target < block // 2:
+            break
+        lo = max(cuts[-1] + block // 2, target - search)
+        hi = min(n - block // 2, target + search)
+        if hi - win <= lo:
+            cut = min(target, n - block // 2)
+        else:
+            seg = np.abs(audio[lo:hi])
+            stride = max(1, win // 4)
+            starts = list(range(0, len(seg) - win, stride))
+            energies = [float(seg[x:x + win].mean()) for x in starts]
+            cut = lo + starts[int(np.argmin(energies))] + win // 2
+        if cut <= cuts[-1]:
+            break
+        cuts.append(cut)
+        target = cut + block
+    cuts.append(n)
+    return cuts
+
+
 def transcribe_wav(wav_path, jsonl, profile):
     import numpy as np
     from faster_whisper import WhisperModel
@@ -151,40 +202,51 @@ def transcribe_wav(wav_path, jsonl, profile):
     print(f"[model] {profile.model['name']} {profile.model['compute_type']} "
           f"loaded in {time.time()-t0:.0f}s", flush=True)
 
-    # Sequential path, NOT BatchedInferencePipeline -- see README "Gotchas".
-    # initial_prompt WITH condition_on_previous_text=True: with conditioning
-    # off, the prompt is discarded after the first 30 s window.
-    segments, info = model.transcribe(
-        audio[int(offset * SR):],
-        language=profile.language,
-        task="transcribe",
-        vad_filter=True,
-        vad_parameters=dict(min_silence_duration_ms=500),
-        initial_prompt=profile.glossary or None,
-        condition_on_previous_text=True,
-    )
-    print(f"[lang] {info.language} p={info.language_probability:.3f}", flush=True)
+    tail = audio[int(offset * SR):]
+    cuts = split_points(tail, profile.chunk_minutes * 60)
+    if len(cuts) > 2:
+        print(f"[chunk] {len(cuts)-1} blocks, target {profile.chunk_minutes:.0f} min, "
+              f"seams at silence", flush=True)
 
     t1 = time.time()
     n = 0
     last = 0.0
     with open(jsonl, "a" if offset > 0 else "w", encoding="utf-8") as out:
-        for s in segments:
-            a, b = s.start + offset, s.end + offset
-            out.write(json.dumps({
-                "start": round(a, 2), "end": round(b, 2), "text": s.text.strip(),
-                "alp": round(s.avg_logprob, 3), "nsp": round(s.no_speech_prob, 3),
-                "cr": round(s.compression_ratio, 2),
-            }, ensure_ascii=False) + "\n")
-            out.flush()
-            n += 1
-            if b - last >= 120:
-                last = b
-                el = time.time() - t1
-                spd = (b - offset) / el if el else 0
-                eta = (total - b) / spd / 60 if spd else 0
-                print(f"  {b/60:6.1f}/{total/60:.0f} min  {100*b/total:5.1f}%  "
-                      f"{spd:4.2f}x realtime  ETA {eta:5.1f} min  segs={n}", flush=True)
+        for _bi, (_lo, _hi) in enumerate(zip(cuts, cuts[1:])):
+            base = offset + _lo / SR
+            # Sequential path, NOT BatchedInferencePipeline -- see README "Gotchas".
+            # initial_prompt WITH condition_on_previous_text=True: with conditioning
+            # off, the prompt is discarded after the first 30 s window. Conditioning
+            # is deliberately re-seeded at each block boundary -- that is the whole
+            # reason for splitting, since it stops one bad window setting the style
+            # for the rest of the file.
+            segments, info = model.transcribe(
+                tail[_lo:_hi],
+                language=profile.language,
+                task="transcribe",
+                vad_filter=True,
+                vad_parameters=dict(min_silence_duration_ms=500),
+                initial_prompt=profile.glossary or None,
+                condition_on_previous_text=True,
+            )
+            if _bi == 0:
+                print(f"[lang] {info.language} p={info.language_probability:.3f}", flush=True)
+            for s in segments:
+                a, b = s.start + base, s.end + base
+                out.write(json.dumps({
+                    "start": round(a, 2), "end": round(b, 2), "text": s.text.strip(),
+                    "alp": round(s.avg_logprob, 3), "nsp": round(s.no_speech_prob, 3),
+                    "cr": round(s.compression_ratio, 2),
+                }, ensure_ascii=False) + "\n")
+                out.flush()
+                n += 1
+                if b - last >= 120:
+                    last = b
+                    el = time.time() - t1
+                    spd = (b - offset) / el if el else 0
+                    eta = (total - b) / spd / 60 if spd else 0
+                    print(f"  {b/60:6.1f}/{total/60:.0f} min  {100*b/total:5.1f}%  "
+                          f"{spd:4.2f}x realtime  ETA {eta:5.1f} min  segs={n}", flush=True)
     print(f"[done] {n} segments in {(time.time()-t1)/60:.1f} min", flush=True)
     # True only when this run decoded the whole file from the start, which is
     # the only case where elapsed time is a transcription speed. A resumed run

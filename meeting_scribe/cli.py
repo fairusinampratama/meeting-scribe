@@ -64,6 +64,8 @@ def cmd_transcribe(args):
     import json as _json
 
     profile = Profile.load(args.profile)
+    if args.chunk_minutes is not None:
+        profile.chunk_minutes = args.chunk_minutes
     prefix, date = _prefix(args.video, profile)
 
     outdir = _resolve_outdir(args.video, date, profile.project, args.outdir)
@@ -173,6 +175,9 @@ def _record_metrics(work, outdir, args, profile, wall_minutes):
         if os.path.exists(snap):
             m["profile_sha"] = hashlib.sha256(open(snap, "rb").read()).hexdigest()[:12]
 
+        # Recorded because it changes the decoding, so a comparison between two
+        # runs has to be able to say whether this differed.
+        m["chunk_minutes"] = profile.chunk_minutes
         m["run_at"] = datetime.datetime.now().isoformat(timespec="seconds")
         m["source"] = os.path.abspath(args.video)
         m["outdir"] = os.path.abspath(outdir)
@@ -324,6 +329,9 @@ def main(argv=None):
     t.add_argument("--title", default="")
     t.add_argument("--meta", default="")
     t.add_argument("--track", type=int, help="override which audio track to transcribe")
+    t.add_argument("--chunk-minutes", type=float, default=None,
+                   help="decode in blocks of N minutes, re-seeding the glossary at each "
+                        "boundary so one bad window cannot poison the rest (0 = one pass)")
     t.add_argument("--no-speakers", action="store_true", help="skip speaker detection")
     t.add_argument("--no-frames", action="store_true", help="skip keyframe extraction")
     t.add_argument("--frames", type=int, default=12, help="keyframes to extract (default 12)")
